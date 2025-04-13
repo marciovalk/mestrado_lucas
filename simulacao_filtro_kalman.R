@@ -30,105 +30,140 @@ generate_ar1_with_na <- function(n, phi, sigma, k, j) {
   return(ar1)
 }
 
+# Imputação com filtro de Kalman
 impute_with_kalman <- function(ts) {
-  # Argumentos:
-  # ts: Série temporal com valores nulos
-  
-  # Imputação de valores com filtro de Kalman
   imputed_ts <- na_kalman(ts)
-  
+  return(imputed_ts)
+}
+
+# Imputação por Interpolação Linear
+impute_with_linear_interpolation <- function(ts) {
+  imputed_ts <- na_interpolation(ts, option = "linear")
+  return(imputed_ts)
+}
+
+# Imputação por Média Móvel
+impute_with_moving_average <- function(ts, window_size = 5) {
+  imputed_ts <- na_ma(ts, k = window_size, weighting = "simple")
+  return(imputed_ts)
+}
+
+# Imputação com a Média Global
+impute_with_global_mean <- function(ts) {
+  ts[is.na(ts)] <- mean(ts, na.rm = TRUE)
+  return(ts)
+}
+
+# Imputação por Hot Deck
+impute_with_hot_deck <- function(ts) {
+  library(VIM)
+  # Converte a série temporal para data frame
+  ts_df <- data.frame(value = ts)
+  imputed_df <- hotdeck(ts_df)
+  imputed_ts <- imputed_df$value
   return(imputed_ts)
 }
 
 
 extract_non_missing_segments <- function(ts) {
-  # Argumentos:
-  # ts: Série temporal com valores nulos
-  
-  # Identificando os termos nulos
   non_na_indices <- which(!is.na(ts))
-  
-  # Extrai nulos da série
   new_ts <- ts[non_na_indices]
-  
   return(new_ts)
 }
 
-
-# Função para calcular o estimador de Mínimos Quadrados (OLS) para AR(1)
 ols_estimate_ar1 <- function(ts) {
   n <- length(ts)
   y <- ts[2:n]
   x <- ts[1:(n-1)]
   
-  # Estimador OLS para AR(1) é dada por phi_hat = (sum(x * y)) / sum(x^2)
   phi_hat <- sum(x * y) / sum(x^2)
-  
   return(phi_hat)
 }
 
-# Função para calcular o Erro Quadrático Médio (EQM)
 calculate_mse <- function(estimates, true_phi) {
-  # Calcula o EQM
   mse <- mean((estimates - true_phi)^2)
   return(mse)
 }
 
-# Função para realizar a simulação de Monte Carlo
 monte_carlo_simulation <- function(n_simulations, n, phi, sigma, k, j) {
-  phi_estimates_imputed <- numeric(n_simulations)
+  phi_estimates_kalman <- numeric(n_simulations)
+  phi_estimates_linear <- numeric(n_simulations)
+  phi_estimates_ma <- numeric(n_simulations)
+  phi_estimates_mean <- numeric(n_simulations)
+  phi_estimates_hot_deck <- numeric(n_simulations)
   phi_estimates_non_missing <- numeric(n_simulations)
   
   for (i in 1:n_simulations) {
-    # Gerar série temporal AR(1) com NAs
     ts_with_na <- generate_ar1_with_na(n, phi, sigma, k, j)
     
     # Imputação com Kalman
-    ts_imputed <- impute_with_kalman(ts_with_na)
+    ts_kalman <- impute_with_kalman(ts_with_na)
+    phi_estimates_kalman[i] <- ols_estimate_ar1(ts_kalman)
     
-    # Estimador OLS para a série imputada
-    phi_estimates_imputed[i] <- ols_estimate_ar1(ts_imputed)
+    # Imputação por interpolação linear
+    ts_linear <- impute_with_linear_interpolation(ts_with_na)
+    phi_estimates_linear[i] <- ols_estimate_ar1(ts_linear)
     
-    # Extrair os segmentos não faltantes
+    # Imputação por média móvel
+    ts_ma <- impute_with_moving_average(ts_with_na)
+    phi_estimates_ma[i] <- ols_estimate_ar1(ts_ma)
+    
+    # Imputação por média global
+    ts_mean <- impute_with_global_mean(ts_with_na)
+    phi_estimates_mean[i] <- ols_estimate_ar1(ts_mean)
+    
+    # Imputação por Hot Deck
+    ts_hot_deck <- impute_with_hot_deck(ts_with_na)
+    phi_estimates_hot_deck[i] <- ols_estimate_ar1(ts_hot_deck)
+    
+    # Estimativa sem dados faltantes (segmentos não faltantes)
     ts_non_missing <- extract_non_missing_segments(ts_with_na)
-    
-    # Estimador OLS para a série com segmentos não faltantes
     phi_estimates_non_missing[i] <- ols_estimate_ar1(ts_non_missing)
   }
   
-  # Calcular o EQM para cada abordagem
-  mse_imputed <- calculate_mse(phi_estimates_imputed, phi)
+  # Calcula o EQM para cada abordagem
+  mse_kalman <- calculate_mse(phi_estimates_kalman, phi)
+  mse_linear <- calculate_mse(phi_estimates_linear, phi)
+  mse_ma <- calculate_mse(phi_estimates_ma, phi)
+  mse_mean <- calculate_mse(phi_estimates_mean, phi)
+  mse_hot_deck <- calculate_mse(phi_estimates_hot_deck, phi)
   mse_non_missing <- calculate_mse(phi_estimates_non_missing, phi)
   
-  # Retorna as estimativas de phi e os EQMs
   return(list(
-    phi_estimates_imputed = phi_estimates_imputed,
+    phi_estimates_kalman = phi_estimates_kalman,
+    phi_estimates_linear = phi_estimates_linear,
+    phi_estimates_ma = phi_estimates_ma,
+    phi_estimates_mean = phi_estimates_mean,
+    phi_estimates_hot_deck = phi_estimates_hot_deck,
     phi_estimates_non_missing = phi_estimates_non_missing,
-    mse_imputed = mse_imputed,
+    mse_kalman = mse_kalman,
+    mse_linear = mse_linear,
+    mse_ma = mse_ma,
+    mse_mean = mse_mean,
+    mse_hot_deck = mse_hot_deck,
     mse_non_missing = mse_non_missing
   ))
 }
 
-# Configurações da simulação
-n_simulations <- 1000  # Número de simulações de Monte Carlo
-n <- 350  # Tamanho das séries temporais
-phi <- 0.5  # Coeficiente AR(1)
-sigma <- 1  # Desvio padrão do erro branco
-k <- 30  # Índice de início dos NAs
-j <- 90  # Quantidade consecutiva de NAs
+n_simulations <- 1000
+n <- 300
+phi <- 0.5
+sigma <- 1
+k <- 20
+j <- 120
 
-# Executar a simulação de Monte Carlo
 results <- monte_carlo_simulation(n_simulations, n, phi, sigma, k, j)
 
-# Exibir as médias das estimativas de phi e os EQMs
-cat("Média da estimativa de phi (com imputação Kalman): ", mean(results$phi_estimates_imputed), "\n")
-cat("Média da estimativa de phi (sem NAs - segmentos não faltantes): ", mean(results$phi_estimates_non_missing), "\n")
-cat("EQM para a série imputada com Kalman: ", results$mse_imputed, "\n")
-cat("EQM para a série sem NAs (segmentos não faltantes): ", results$mse_non_missing, "\n")
+cat("Média da estimativa de phi (Kalman):", mean(results$phi_estimates_kalman), "\n")
+cat("Média da estimativa de phi (Interpolação Linear):", mean(results$phi_estimates_linear), "\n")
+cat("Média da estimativa de phi (Média Móvel):", mean(results$phi_estimates_ma), "\n")
+cat("Média da estimativa de phi (Média Global):", mean(results$phi_estimates_mean), "\n")
+cat("Média da estimativa de phi (Hot Deck):", mean(results$phi_estimates_hot_deck), "\n")
+cat("Média da estimativa de phi (Sem NAs):", mean(results$phi_estimates_non_missing), "\n")
 
-
-
-
-
-
-
+cat("EQM (Kalman):", results$mse_kalman, "\n")
+cat("EQM (Interpolação Linear):", results$mse_linear, "\n")
+cat("EQM (Média Móvel):", results$mse_ma, "\n")
+cat("EQM (Média Global):", results$mse_mean, "\n")
+cat("EQM (Hot Deck):", results$mse_hot_deck, "\n")
+cat("EQM (Sem NAs):", results$mse_non_missing, "\n")

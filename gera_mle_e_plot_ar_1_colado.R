@@ -113,4 +113,7 @@ for (n in n_values) {
 }
 
 # Exibir a tabela de resultados
-print(results)
+write.csv2(results, 'resultados_mle_sim.csv') 
+
+
+
